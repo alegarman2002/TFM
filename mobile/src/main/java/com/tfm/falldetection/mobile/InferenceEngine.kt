@@ -117,7 +117,7 @@ class InferenceEngine private constructor(context: Context) {
      *   4. Aplica Z-score por canal
      */
     private fun preprocessInput(payload: ByteArray): Array<Array<FloatArray>> {
-        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
+        val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
         val tensor = Array(1) { Array(WINDOW_SIZE) { FloatArray(N_MODEL_CHANNELS) } }
 
         for (t in 0 until WINDOW_SIZE) {

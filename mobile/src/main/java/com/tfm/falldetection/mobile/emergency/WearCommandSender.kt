@@ -12,14 +12,13 @@ import kotlinx.coroutines.tasks.await
 /**
  * WearCommandSender
  *
- * Envía órdenes de control de monitorización al reloj. Path
- * "/monitoring_command" con payloads de texto:
+ * Envía órdenes de control al reloj por el path "/monitoring_command":
  *
- *   - "PAUSE"  → el reloj detiene SensorCaptureService
- *   - "RESUME" → el reloj arranca SensorCaptureService
- *
- * Es independiente de WearStateSender (que gestiona el estado de la
- * pre-alerta) para mantener separadas ambas responsabilidades.
+ *   - "PAUSE"  / "RESUME"            → pausa/reanuda la monitorización
+ *   - "START_COLLECTION" / "STOP_COLLECTION"
+ *                                    → activa/desactiva el streaming continuo
+ *                                      del acelerómetro para recogida de datos
+ *                                      (=== RECOGIDA DE DATOS ===)
  */
 object WearCommandSender {
 
@@ -30,6 +29,11 @@ object WearCommandSender {
 
     fun sendPause(context: Context)  = send(context, "PAUSE")
     fun sendResume(context: Context) = send(context, "RESUME")
+
+    // === RECOGIDA DE DATOS ===
+    fun sendStartCollection(context: Context) = send(context, "START_COLLECTION")
+    fun sendStopCollection(context: Context)  = send(context, "STOP_COLLECTION")
+    // === FIN RECOGIDA DE DATOS ===
 
     private fun send(context: Context, payload: String) {
         val ctx = context.applicationContext

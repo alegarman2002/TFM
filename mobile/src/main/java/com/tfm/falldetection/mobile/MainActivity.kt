@@ -24,6 +24,7 @@ import com.tfm.falldetection.mobile.emergency.MonitoringController
 import com.tfm.falldetection.mobile.emergency.NotificationHelper
 import com.tfm.falldetection.mobile.ui.ConfigScreen
 import com.tfm.falldetection.mobile.ui.DashboardScreen
+import com.tfm.falldetection.mobile.ui.DataCollectionScreen
 import com.tfm.falldetection.mobile.ui.PreAlertScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -31,10 +32,9 @@ import kotlinx.coroutines.runBlocking
 /**
  * MainActivity
  *
- * Punto de entrada de la aplicación móvil. Inicializa los singletons del
- * sistema (inferencia, ejecutor de emergencias, feedback, controlador de
- * monitorización), arranca el MonitoringService en segundo plano y solicita
- * los permisos necesarios.
+ * Punto de entrada de la app móvil. Inicializa los singletons del sistema,
+ * arranca el MonitoringService y gestiona la navegación entre pantallas:
+ *   config | dashboard | prealert | datacollection (recogida de datos)
  */
 class MainActivity : ComponentActivity() {
 
@@ -133,7 +133,9 @@ fun FallDetectionApp(navController: NavHostController, startDestination: String)
                     navController.navigate("dashboard") {
                         popUpTo("config") { inclusive = true }
                     }
-                }
+                },
+                // === RECOGIDA DE DATOS ===
+                onOpenDataCollection = { navController.navigate("datacollection") }
             )
         }
 
@@ -157,5 +159,13 @@ fun FallDetectionApp(navController: NavHostController, startDestination: String)
                 }
             )
         }
+
+        // === RECOGIDA DE DATOS ===
+        composable("datacollection") {
+            DataCollectionScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        // === FIN RECOGIDA DE DATOS ===
     }
 }

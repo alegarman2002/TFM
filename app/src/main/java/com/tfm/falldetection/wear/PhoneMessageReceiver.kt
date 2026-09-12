@@ -8,18 +8,13 @@ import com.google.android.gms.wearable.WearableListenerService
 /**
  * PhoneMessageReceiver
  *
- * Escucha los mensajes que envía el móvil al reloj. Maneja dos paths:
+ * Escucha los mensajes del móvil:
  *
- *   - /prealert_state    → sincroniza la pantalla de pre-alerta
- *                          (START:<secs> / END / RESOLVED).
- *
- *   - /monitoring_command→ control remoto de la captura:
- *                          "PAUSE"  detiene SensorCaptureService
- *                          "RESUME" arranca SensorCaptureService
- *
- * El comando de monitorización es lógica de fondo: no altera la interfaz
- * del reloj, solo arranca o detiene el servicio de captura para ahorrar
- * batería cuando el usuario pausa desde el móvil.
+ *   - /prealert_state     → sincroniza la pantalla de pre-alerta.
+ *   - /monitoring_command → control remoto:
+ *        "PAUSE" / "RESUME"                          monitorización
+ *        "START_COLLECTION" / "STOP_COLLECTION"      recogida de datos
+ *                                                    (=== RECOGIDA DE DATOS ===)
  */
 class PhoneMessageReceiver : WearableListenerService() {
 
@@ -40,7 +35,6 @@ class PhoneMessageReceiver : WearableListenerService() {
     private fun handlePreAlertState(event: MessageEvent) {
         val payload = String(event.data, Charsets.UTF_8)
         Log.i(TAG, "prealert_state: '$payload'")
-
         val parts = payload.split(":")
         when (parts[0]) {
             "START" -> {
@@ -56,12 +50,32 @@ class PhoneMessageReceiver : WearableListenerService() {
     private fun handleMonitoringCommand(event: MessageEvent) {
         val payload = String(event.data, Charsets.UTF_8)
         Log.i(TAG, "monitoring_command: '$payload'")
-
         when (payload) {
             "PAUSE"  -> SensorCaptureService.stop(this)
             "RESUME" -> SensorCaptureService.start(this)
+            // === RECOGIDA DE DATOS ===
+            "START_COLLECTION" -> sendActionToService(SensorCaptureService.ACTION_START_COLLECTION)
+            "STOP_COLLECTION"  -> sendActionToService(SensorCaptureService.ACTION_STOP_COLLECTION)
+            // === FIN RECOGIDA DE DATOS ===
         }
     }
+
+    // === RECOGIDA DE DATOS ===
+    private fun sendActionToService(action: String) {
+        val intent = Intent(this, SensorCaptureService::class.java).apply {
+            this.action = action
+        }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "No se pudo enviar acción '$action': ${e.message}")
+        }
+    }
+    // === FIN RECOGIDA DE DATOS ===
 
     private fun openMainActivity() {
         val intent = Intent(this, MainActivity::class.java).apply {

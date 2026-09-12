@@ -23,16 +23,17 @@ import kotlinx.coroutines.launch
 /**
  * ConfigScreen
  *
- * Permite al usuario configurar:
- *   - Nombre del contacto de emergencia (informativo)
- *   - Número de teléfono al que se enviará el SMS
- *   - Duración del countdown antes del envío automático
- *
- * Al guardar correctamente, navega al dashboard.
+ * Configuración del contacto de emergencia (nombre, teléfono, countdown).
+ * Incluye además un acceso discreto al modo de recogida de datos
+ * (=== RECOGIDA DE DATOS ===), pensado solo para construir el dataset de
+ * entrenamiento y no para el producto final.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfigScreen(onSaved: () -> Unit) {
+fun ConfigScreen(
+    onSaved: () -> Unit,
+    onOpenDataCollection: () -> Unit = {}   // === RECOGIDA DE DATOS ===
+) {
     val context = LocalContext.current
     val prefs = remember { EmergencyPreferences(context) }
     val scope = rememberCoroutineScope()
@@ -43,7 +44,6 @@ fun ConfigScreen(onSaved: () -> Unit) {
     var errorMsg    by remember { mutableStateOf<String?>(null) }
     var isLoading   by remember { mutableStateOf(true) }
 
-    // Cargar valores actuales al entrar
     LaunchedEffect(Unit) {
         val current = prefs.settings.first()
         name      = current.contactName
@@ -86,7 +86,6 @@ fun ConfigScreen(onSaved: () -> Unit) {
             return@Column
         }
 
-        // Campo: Nombre del contacto
         OutlinedTextField(
             value         = name,
             onValueChange = { name = it },
@@ -99,7 +98,6 @@ fun ConfigScreen(onSaved: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Campo: Teléfono
         OutlinedTextField(
             value         = phone,
             onValueChange = { phone = it.filter { c -> c.isDigit() || c == '+' } },
@@ -113,7 +111,6 @@ fun ConfigScreen(onSaved: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Campo: Countdown
         OutlinedTextField(
             value         = countdown,
             onValueChange = { countdown = it.filter { c -> c.isDigit() }.take(2) },
@@ -172,6 +169,19 @@ fun ConfigScreen(onSaved: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
         }
+
+        // === RECOGIDA DE DATOS ===
+        Spacer(modifier = Modifier.height(24.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
+        Spacer(modifier = Modifier.height(12.dp))
+        TextButton(onClick = onOpenDataCollection) {
+            Text(
+                text  = "Modo recogida de datos (entrenamiento)",
+                color = Color(0xFF80CBC4),
+                fontSize = 13.sp
+            )
+        }
+        // === FIN RECOGIDA DE DATOS ===
 
         Spacer(modifier = Modifier.height(40.dp))
     }

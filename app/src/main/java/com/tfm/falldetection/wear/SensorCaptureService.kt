@@ -31,29 +31,17 @@ import kotlin.math.sqrt
 /**
  * SensorCaptureService
  *
- * Foreground Service que captura el acelerómetro a 50 Hz y aplica un
- * pre-filtro de pico de aceleración antes de enviar tramas al smartphone.
+ * Captura el acelerómetro a 50 Hz. Cumple dos funciones simultáneas:
  *
- * Diseño:
+ *  1) MONITORIZACIÓN (producto final): mantiene un buffer circular de 150
+ *     muestras y, al detectar un pico (|a| ≥ 2 g), envía la ventana al móvil
+ *     por "/sensor_data" para la inferencia.
  *
- *   - Buffer circular en memoria de 150 muestras (3 s), donde cada muestra
- *     contiene los ejes (ax, ay, az) en m/s².
- *
- *   - En cada lectura, calcula la magnitud |a| = √(ax² + ay² + az²).
- *
- *   - Si |a| supera el umbral PEAK_THRESHOLD (≈ 2 g) y no estamos en
- *     periodo de cooldown, se inicia una captura: espera POST_PEAK_SAMPLES
- *     muestras adicionales (1.5 s después del pico) para que el evento
- *     quede centrado en la ventana, y entonces envía las 150 muestras al
- *     móvil vía Wearable MessageClient con el path "/sensor_data".
- *
- *   - Tras el envío activa un cooldown de COOLDOWN_MS milisegundos durante
- *     el cual no se disparan nuevas detecciones, evitando enviar varias
- *     veces la misma caída.
- *
- * El servicio es de tipo dataSync y muestra una notificación persistente
- * mientras está activo. El usuario lo arranca y detiene desde el botón
- * ACTIVAR / DETENER de MainActivity.
+ *  2) RECOGIDA DE DATOS (=== RECOGIDA DE DATOS ===, solo entrenamiento):
+ *     cuando collectionMode está activo, además acumula TODAS las muestras en
+ *     lotes de 1 s (50 muestras) y las envía por "/data_collection" con un
+ *     índice monotónico de sesión. Esto graba el flujo continuo completo,
+ *     incluidas las caídas que el modelo no detecta.
  */
 class SensorCaptureService : Service(), SensorEventListener {
 
@@ -64,15 +52,22 @@ class SensorCaptureService : Service(), SensorEventListener {
         private const val NOTIF_ID         = 2001
 
         private const val SAMPLE_RATE_HZ      = 50
-        private const val WINDOW_SIZE         = 150         // 3 s a 50 Hz
-        private const val POST_PEAK_SAMPLES   = 75          // 1.5 s tras el pico
-        private const val PEAK_THRESHOLD_MS2  = 20f         // ≈ 2 g
-        private const val COOLDOWN_MS         = 5_000L      // 5 s tras envío
+        private const val WINDOW_SIZE         = 150
+        private const val POST_PEAK_SAMPLES   = 75
+        private const val PEAK_THRESHOLD_MS2  = 20f
+        private const val COOLDOWN_MS         = 5_000L
 
         private const val MESSAGE_PATH = "/sensor_data"
 
         private const val ACTION_START = "com.tfm.falldetection.wear.START"
         private const val ACTION_STOP  = "com.tfm.falldetection.wear.STOP"
+
+        // === RECOGIDA DE DATOS ===
+        const val ACTION_START_COLLECTION = "com.tfm.falldetection.wear.START_COLLECTION"
+        const val ACTION_STOP_COLLECTION  = "com.tfm.falldetection.wear.STOP_COLLECTION"
+        private const val COLLECTION_PATH = "/data_collection"
+        private const val BATCH_SIZE      = 50          // 1 s a 50 Hz
+        // === FIN RECOGIDA DE DATOS ===
 
         fun start(context: Context) {
             val intent = Intent(context, SensorCaptureService::class.java).apply {
@@ -93,16 +88,26 @@ class SensorCaptureService : Service(), SensorEventListener {
         }
     }
 
-    // --- Estado interno del buffer ---
+    // Buffer circular para monitorización
     private val bufferX = FloatArray(WINDOW_SIZE)
     private val bufferY = FloatArray(WINDOW_SIZE)
     private val bufferZ = FloatArray(WINDOW_SIZE)
-    private var bufferHead = 0           // posición de escritura
-    private var bufferFilled = 0         // muestras válidas acumuladas
+    private var bufferHead = 0
+    private var bufferFilled = 0
 
-    // --- Estado del detector ---
-    private var captureCountdown = -1    // muestras restantes tras pico (-1 = ocioso)
-    private var lastCaptureMs    = 0L    // timestamp del último envío
+    private var captureCountdown = -1
+    private var lastCaptureMs    = 0L
+
+    // === RECOGIDA DE DATOS ===
+    @Volatile private var collectionMode = false
+    private var collectionSampleIndex = 0L
+    private val batchTs = LongArray(BATCH_SIZE)
+    private val batchAx = FloatArray(BATCH_SIZE)
+    private val batchAy = FloatArray(BATCH_SIZE)
+    private val batchAz = FloatArray(BATCH_SIZE)
+    private var batchCount = 0
+    private var batchStartIndex = 0L
+    // === FIN RECOGIDA DE DATOS ===
 
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
@@ -110,27 +115,40 @@ class SensorCaptureService : Service(), SensorEventListener {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var sendJob: Job? = null
 
-    // ─────────────────────────── Service ───────────────────────────
-
     override fun onCreate() {
         super.onCreate()
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        Log.i(TAG, "Service onCreate (acelerómetro disponible=${accelerometer != null})")
+        Log.i(TAG, "Service onCreate (acelerómetro=${accelerometer != null})")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                Log.i(TAG, "ACTION_STOP recibido")
+                Log.i(TAG, "ACTION_STOP")
                 stopMonitoring()
                 stopSelf()
                 return START_NOT_STICKY
             }
+            // === RECOGIDA DE DATOS ===
+            ACTION_START_COLLECTION -> {
+                Log.i(TAG, "ACTION_START_COLLECTION")
+                startInForeground()
+                ensureListening()
+                collectionSampleIndex = 0L
+                batchCount = 0
+                collectionMode = true
+            }
+            ACTION_STOP_COLLECTION -> {
+                Log.i(TAG, "ACTION_STOP_COLLECTION")
+                collectionMode = false
+                flushBatch()
+            }
+            // === FIN RECOGIDA DE DATOS ===
             else -> {
                 Log.i(TAG, "ACTION_START / arranque")
                 startInForeground()
-                startMonitoring()
+                ensureListening()
             }
         }
         return START_STICKY
@@ -145,11 +163,8 @@ class SensorCaptureService : Service(), SensorEventListener {
         super.onDestroy()
     }
 
-    // ─────────────────────────── Notificación ──────────────────────────
-
     private fun startInForeground() {
         ensureChannel()
-
         val notif: Notification = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentTitle("Detector activo")
@@ -169,47 +184,38 @@ class SensorCaptureService : Service(), SensorEventListener {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = ContextCompat.getSystemService(this, NotificationManager::class.java) ?: return
         val ch = NotificationChannel(
-            NOTIF_CHANNEL_ID,
-            "Monitorización en reloj",
+            NOTIF_CHANNEL_ID, "Monitorización en reloj",
             NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            setShowBadge(false)
-        }
+        ).apply { setShowBadge(false) }
         nm.createNotificationChannel(ch)
     }
 
-    // ─────────────────────────── Captura ──────────────────────────────
+    private var listening = false
 
-    private fun startMonitoring() {
+    private fun ensureListening() {
+        if (listening) return
         val acc = accelerometer
         if (acc == null) {
-            Log.e(TAG, "El dispositivo no dispone de acelerómetro")
+            Log.e(TAG, "Sin acelerómetro")
             stopSelf()
             return
         }
-
-        // Periodo en microsegundos para alcanzar 50 Hz
-        val samplingPeriodUs = (1_000_000 / SAMPLE_RATE_HZ)
-        val ok = sensorManager.registerListener(this, acc, samplingPeriodUs)
+        val periodUs = 1_000_000 / SAMPLE_RATE_HZ
+        val ok = sensorManager.registerListener(this, acc, periodUs)
+        listening = ok
         Log.i(TAG, "registerListener ok=$ok @ ${SAMPLE_RATE_HZ}Hz")
 
-        // Reset del estado interno
-        bufferHead       = 0
-        bufferFilled     = 0
-        captureCountdown = -1
-        lastCaptureMs    = 0L
+        bufferHead = 0; bufferFilled = 0
+        captureCountdown = -1; lastCaptureMs = 0L
     }
 
     private fun stopMonitoring() {
         sensorManager.unregisterListener(this)
+        listening = false
         Log.i(TAG, "Sensor desregistrado")
     }
 
-    // ─────────────────────────── SensorEventListener ──────────────────
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // No relevante para este caso
-    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
@@ -218,18 +224,30 @@ class SensorCaptureService : Service(), SensorEventListener {
         val ay = event.values[1]
         val az = event.values[2]
 
-        // 1. Almacenar en el buffer circular
+        // ---- Monitorización (buffer circular + detección de pico) ----
         bufferX[bufferHead] = ax
         bufferY[bufferHead] = ay
         bufferZ[bufferHead] = az
         bufferHead = (bufferHead + 1) % WINDOW_SIZE
         if (bufferFilled < WINDOW_SIZE) bufferFilled++
 
-        // 2. Si estamos en cooldown tras un envío reciente, no analizar
         val nowMs = System.currentTimeMillis()
+
+        // === RECOGIDA DE DATOS: acumular en lote y enviar ====
+        if (collectionMode) {
+            if (batchCount == 0) batchStartIndex = collectionSampleIndex
+            batchTs[batchCount] = nowMs
+            batchAx[batchCount] = ax
+            batchAy[batchCount] = ay
+            batchAz[batchCount] = az
+            batchCount++
+            collectionSampleIndex++
+            if (batchCount >= BATCH_SIZE) flushBatch()
+        }
+        // === FIN RECOGIDA DE DATOS ===
+
         if (nowMs - lastCaptureMs < COOLDOWN_MS) return
 
-        // 3. Si ya tenemos una captura en marcha, descontamos muestras
         if (captureCountdown > 0) {
             captureCountdown--
             if (captureCountdown == 0) {
@@ -241,52 +259,69 @@ class SensorCaptureService : Service(), SensorEventListener {
             return
         }
 
-        // 4. Detección de pico: magnitud > umbral
         val magnitude = sqrt(ax * ax + ay * ay + az * az)
         if (magnitude >= PEAK_THRESHOLD_MS2 && bufferFilled >= WINDOW_SIZE) {
-            Log.w(TAG, "PICO detectado: |a|=$magnitude m/s² — iniciando captura post")
+            Log.w(TAG, "PICO detectado: |a|=$magnitude m/s²")
             captureCountdown = POST_PEAK_SAMPLES
         }
     }
 
-    // ─────────────────────────── Envío ─────────────────────────────────
-
-    /**
-     * Linealiza el buffer circular en orden cronológico y lo envía al móvil
-     * en una sola trama de 1800 bytes (150 muestras × 3 floats × 4 bytes).
-     */
     private fun dispatchWindow() {
-        val payload = ByteBuffer.allocate(WINDOW_SIZE * 3 * 4)
-            .order(ByteOrder.LITTLE_ENDIAN)
-
-        // El buffer circular avanza con bufferHead apuntando a la PRÓXIMA
-        // escritura, así que el primer elemento cronológico está en bufferHead
+        val payload = ByteBuffer.allocate(WINDOW_SIZE * 3 * 4).order(ByteOrder.LITTLE_ENDIAN)
         for (i in 0 until WINDOW_SIZE) {
             val idx = (bufferHead + i) % WINDOW_SIZE
             payload.putFloat(bufferX[idx])
             payload.putFloat(bufferY[idx])
             payload.putFloat(bufferZ[idx])
         }
-
         val bytes = payload.array()
-        Log.i(TAG, "Trama lista: ${bytes.size} bytes")
+        sendJob = scope.launch { sendBytes(MESSAGE_PATH, bytes) }
+    }
 
-        sendJob = scope.launch {
-            try {
-                val nodeClient = Wearable.getNodeClient(this@SensorCaptureService)
-                val messageClient = Wearable.getMessageClient(this@SensorCaptureService)
-                val nodes = nodeClient.connectedNodes.await()
-                if (nodes.isEmpty()) {
-                    Log.w(TAG, "Sin nodos conectados — payload descartado")
-                    return@launch
-                }
-                nodes.forEach { node ->
-                    messageClient.sendMessage(node.id, MESSAGE_PATH, bytes).await()
-                    Log.i(TAG, "Trama enviada a ${node.displayName}")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error enviando trama: ${e.message}", e)
+    // === RECOGIDA DE DATOS ===
+    /**
+     * Empaqueta el lote actual y lo envía por "/data_collection". El
+     * empaquetado se hace de forma síncrona en el hilo del sensor (rápido)
+     * para evitar condiciones de carrera sobre los arrays del lote; solo el
+     * envío de red va a una corrutina.
+     *
+     * Formato little-endian:
+     *   Long startSampleIndex | Int count |
+     *   count × (Long ts | Float ax | Float ay | Float az)
+     */
+    private fun flushBatch() {
+        val n = batchCount
+        if (n == 0) return
+
+        val buf = ByteBuffer.allocate(8 + 4 + n * 20).order(ByteOrder.LITTLE_ENDIAN)
+        buf.putLong(batchStartIndex)
+        buf.putInt(n)
+        for (i in 0 until n) {
+            buf.putLong(batchTs[i])
+            buf.putFloat(batchAx[i])
+            buf.putFloat(batchAy[i])
+            buf.putFloat(batchAz[i])
+        }
+        batchCount = 0
+
+        val bytes = buf.array()
+        scope.launch { sendBytes(COLLECTION_PATH, bytes) }
+    }
+    // === FIN RECOGIDA DE DATOS ===
+
+    private suspend fun sendBytes(path: String, bytes: ByteArray) {
+        try {
+            val nodes = Wearable.getNodeClient(this).connectedNodes.await()
+            val client = Wearable.getMessageClient(this)
+            if (nodes.isEmpty()) {
+                Log.w(TAG, "Sin nodos conectados — payload '$path' descartado")
+                return
             }
+            nodes.forEach { node ->
+                client.sendMessage(node.id, path, bytes).await()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enviando '$path': ${e.message}", e)
         }
     }
 }

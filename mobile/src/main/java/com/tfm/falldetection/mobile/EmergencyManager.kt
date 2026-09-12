@@ -2,6 +2,7 @@ package com.tfm.falldetection.mobile
 
 import android.content.Context
 import android.util.Log
+import com.tfm.falldetection.mobile.data.DataCollectionStore
 import com.tfm.falldetection.mobile.data.EmergencyPreferences
 import com.tfm.falldetection.mobile.emergency.AlertFeedback
 import com.tfm.falldetection.mobile.emergency.NotificationHelper
@@ -24,13 +25,20 @@ import kotlinx.coroutines.flow.first
  *                                            ▼
  *                                       PROTEGIDO
  *
- * Cuando hay un cambio de estado se envía un mensaje al reloj:
+ * Sincronización con el reloj:
  *   - START:<secs> al pasar a PRE_ALERTA
  *   - RESOLVED al pasar a RESOLUCION_SOS
  *   - END al volver a PROTEGIDO (cancelación o reset)
  *
- * La cancelación remota desde el reloj llega vía WearableMessageReceiver,
- * que invoca cancelar() en este manager.
+ * === RECOGIDA DE DATOS ===
+ * Si hay una sesión de recogida activa (DataCollectionStore), las
+ * transiciones generan eventos etiquetados en events.csv:
+ *   - onCaidaDetectada  → DETECCION (probabilidad del modelo)
+ *   - cancelar()        → ETIQUETA NO_CAIDA (fuente: cancelacion)
+ *   - timeout           → ETIQUETA CAIDA   (fuente: timeout)
+ * Si no hay sesión activa, DataCollectionStore ignora las llamadas, por lo
+ * que el comportamiento de producción no se ve afectado.
+ * === FIN RECOGIDA DE DATOS ===
  */
 class EmergencyManager private constructor(private val context: Context) {
 
@@ -79,6 +87,16 @@ class EmergencyManager private constructor(private val context: Context) {
         _probabilidad.value = probability
         _estado.value = Estado.PRE_ALERTA
 
+        // === RECOGIDA DE DATOS ===
+        DataCollectionStore.appendEvent(
+            timestampMs = System.currentTimeMillis(),
+            eventType   = "DETECCION",
+            label       = "",
+            probability = probability,
+            source      = "modelo"
+        )
+        // === FIN RECOGIDA DE DATOS ===
+
         if (!appInForeground) {
             Log.i(TAG, "App en background — disparando Full-Screen Intent")
             NotificationHelper.firePreAlertFullScreen(context)
@@ -94,6 +112,19 @@ class EmergencyManager private constructor(private val context: Context) {
         }
 
         Log.i(TAG, "Pre-alerta cancelada")
+
+        // === RECOGIDA DE DATOS ===
+        // La cancelación dentro del margen indica que la detección fue un
+        // falso positivo: se etiqueta como NO_CAIDA.
+        DataCollectionStore.appendEvent(
+            timestampMs = System.currentTimeMillis(),
+            eventType   = "ETIQUETA",
+            label       = "NO_CAIDA",
+            probability = _probabilidad.value,
+            source      = "cancelacion"
+        )
+        // === FIN RECOGIDA DE DATOS ===
+
         countdownJob?.cancel()
         countdownJob = null
         _secondsLeft.value = 0
@@ -122,9 +153,7 @@ class EmergencyManager private constructor(private val context: Context) {
             val totalSecs = prefs.settings.first().countdownSecs
             Log.i(TAG, "Iniciando countdown de ${totalSecs}s")
 
-            // Notificamos al reloj para que arranque su pantalla de pre-alerta
             WearStateSender.sendStart(context, totalSecs)
-
             AlertFeedback.onPreAlertStarted(context, totalSecs)
 
             for (s in totalSecs downTo 1) {
@@ -137,6 +166,19 @@ class EmergencyManager private constructor(private val context: Context) {
             if (_estado.value == Estado.PRE_ALERTA) {
                 Log.w(TAG, "Countdown expirado → RESOLUCION_SOS")
                 _estado.value = Estado.RESOLUCION_SOS
+
+                // === RECOGIDA DE DATOS ===
+                // La expiración del margen sin cancelación confirma la caída:
+                // se etiqueta como CAIDA.
+                DataCollectionStore.appendEvent(
+                    timestampMs = System.currentTimeMillis(),
+                    eventType   = "ETIQUETA",
+                    label       = "CAIDA",
+                    probability = _probabilidad.value,
+                    source      = "timeout"
+                )
+                // === FIN RECOGIDA DE DATOS ===
+
                 AlertFeedback.onCountdownExpired(context)
                 WearStateSender.sendResolved(context)
 
