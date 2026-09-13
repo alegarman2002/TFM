@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    id("org.jetbrains.dokka")
 }
 
 android {
@@ -65,4 +66,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
+}
+
+tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>().configureEach {
+    dokkaSourceSets {
+        create("main") {
+            sourceRoots.from(file("src/main/java"))
+        }
+    }
 }
