@@ -74,6 +74,9 @@ class SensorCaptureService : Service(), SensorEventListener {
         private const val ACTION_START = "com.tfm.falldetection.wear.START"
         private const val ACTION_STOP  = "com.tfm.falldetection.wear.STOP"
 
+        /** Estado real de la captura, observado por la pantalla del reloj. */
+        val activo = kotlinx.coroutines.flow.MutableStateFlow(false)
+
         fun start(context: Context) {
             val intent = Intent(context, SensorCaptureService::class.java).apply {
                 action = ACTION_START
@@ -192,6 +195,7 @@ class SensorCaptureService : Service(), SensorEventListener {
         val samplingPeriodUs = (1_000_000 / SAMPLE_RATE_HZ)
         val ok = sensorManager.registerListener(this, acc, samplingPeriodUs)
         Log.i(TAG, "registerListener ok=$ok @ ${SAMPLE_RATE_HZ}Hz")
+        activo.value = ok
 
         // Reset del estado interno
         bufferHead       = 0
@@ -202,6 +206,7 @@ class SensorCaptureService : Service(), SensorEventListener {
 
     private fun stopMonitoring() {
         sensorManager.unregisterListener(this)
+        activo.value = false
         Log.i(TAG, "Sensor desregistrado")
     }
 

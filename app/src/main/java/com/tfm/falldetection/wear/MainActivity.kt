@@ -16,7 +16,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -173,7 +172,8 @@ private fun NormalView(
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    var monitoring by rememberSaveable { mutableStateOf(false) }
+    // Estado real del servicio de captura: cambia también si el teléfono pausa o reanuda
+    val monitoring by SensorCaptureService.activo.collectAsState()
 
     val background = when {
         !permissionsGranted -> Color(0xFF5D4037)
@@ -215,7 +215,8 @@ private fun NormalView(
                     onClick = {
                         if (monitoring) SensorCaptureService.stop(context)
                         else            SensorCaptureService.start(context)
-                        monitoring = !monitoring
+                        // Avisa al teléfono para que su escudo refleje el mismo estado
+                        PhoneStateSender.send(context, !monitoring)
                     }
                 )
             }

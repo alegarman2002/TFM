@@ -9,24 +9,29 @@ import com.tfm.falldetection.mobile.emergency.MonitoringController
  * WearableMessageReceiver
  *
  * Punto de entrada de la app móvil desde la Wearable Data Layer API.
- * Maneja dos paths:
+ * Maneja tres paths:
  *
- *   - /sensor_data   → trama de 1800 bytes con la ventana del acelerómetro.
- *                      Si la monitorización está pausada (MonitoringController),
- *                      la trama se descarta sin procesar. En caso contrario se
- *                      ejecuta la inferencia y, si supera el umbral, se dispara
- *                      la pre-alerta.
+ *   - /sensor_data      → trama de 1800 bytes con la ventana del acelerómetro.
+ *                         Si la monitorización está pausada (MonitoringController),
+ *                         la trama se descarta sin procesar. En caso contrario se
+ *                         ejecuta la inferencia y, si supera el umbral, se dispara
+ *                         la pre-alerta.
  *
- *   - /cancel_alert  → cancelación enviada desde el reloj; aborta la
- *                      pre-alerta en curso.
+ *   - /cancel_alert     → cancelación enviada desde el reloj; aborta la
+ *                         pre-alerta en curso.
+ *
+ *   - /monitoring_state → el usuario ha activado ("ACTIVE") o detenido
+ *                         ("PAUSED") la vigilancia desde el reloj; el teléfono
+ *                         adopta el mismo estado.
  */
 class WearableMessageReceiver : WearableListenerService() {
 
     companion object {
         private const val TAG = "WearableMsgReceiver"
 
-        private const val PATH_SENSOR_DATA  = "/sensor_data"
-        private const val PATH_CANCEL_ALERT = "/cancel_alert"
+        private const val PATH_SENSOR_DATA      = "/sensor_data"
+        private const val PATH_CANCEL_ALERT     = "/cancel_alert"
+        private const val PATH_MONITORING_STATE = "/monitoring_state"
 
         private const val EXPECTED_BYTES = 150 * 3 * 4   // 1800
         private const val FALL_THRESHOLD = 0.5f
@@ -34,14 +39,15 @@ class WearableMessageReceiver : WearableListenerService() {
 
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
-            PATH_SENSOR_DATA  -> handleSensorData(event)
-            PATH_CANCEL_ALERT -> handleCancelAlert()
-            else              -> super.onMessageReceived(event)
+            PATH_SENSOR_DATA      -> handleSensorData(event)
+            PATH_CANCEL_ALERT     -> handleCancelAlert()
+            PATH_MONITORING_STATE -> handleMonitoringState(event)
+            else                  -> super.onMessageReceived(event)
         }
     }
 
     private fun handleSensorData(event: MessageEvent) {
-        // Si la monitorización está pausada desde el móvil, ignorar la trama
+        // Si la monitorización está pausada, ignorar la trama
         if (!MonitoringController.isProtected.value) {
             Log.d(TAG, "Monitorización pausada — trama ignorada")
             return
@@ -71,5 +77,11 @@ class WearableMessageReceiver : WearableListenerService() {
     private fun handleCancelAlert() {
         Log.w(TAG, "Cancelación recibida desde el reloj")
         EmergencyManager.getInstance(this).cancelar()
+    }
+
+    private fun handleMonitoringState(event: MessageEvent) {
+        val estado = String(event.data, Charsets.UTF_8)
+        Log.i(TAG, "Estado de vigilancia recibido del reloj: '$estado'")
+        MonitoringController.setFromWatch(this, estado == "ACTIVE")
     }
 }

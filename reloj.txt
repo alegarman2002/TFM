@@ -1,0 +1,26 @@
+﻿--------- beginning of main
+10-31 14:19:09.068 12460 12460 I VRI[MainActivity]@d32863b: handleAppVisibility mAppVisible = false visible = true
+10-31 14:19:09.069 12460 12460 I VRI[MainActivity]@d32863b: stopped(false) old = true
+10-31 14:19:09.070 12460 12460 D ViewRootImpl: Skipping stats log for color mode
+10-31 14:19:09.107 12460 12460 I VRI[MainActivity]@d32863b: Relayout returned: old=(0,0,432,432) new=(0,0,432,432) req=(432,432)0 dur=18 res=0x3 s={true 0xf218ac00} ch=true seqId=0
+10-31 14:19:09.121 12460 12478 D BLASTBufferQueue: [VRI[MainActivity]@d32863b#2](f:0,a:0) onFrameAvailable the first frame is available
+10-31 14:19:09.124 12460 12460 I VRI[MainActivity]@d32863b: reportDrawFinished seqId=0 fn=1
+10-31 14:19:09.158 12460 12460 I VRI[MainActivity]@d32863b: MSG_WINDOW_FOCUS_CHANGED 1 0
+10-31 14:19:09.159 12460 12460 I InputMethodManager: startInputInner - mService.startInputOrWindowGainedFocus
+10-31 14:19:09.159 12460 12460 I InputMethodManager: startInputInner - IInputMethodManagerGlobalInvoker.startInputOrWindowGainedFocus
+10-31 14:19:09.162 12460 12460 I InputMethodManager: handleMessage: setImeVisibility visible=false
+10-31 14:19:09.162 12460 12460 D InsetsController: hide(ime(), fromIme=false)
+10-31 14:19:09.162 12460 12460 I ImeTracker: com.tfm.falldetection:821d271d: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+10-31 14:19:10.557 12460 12460 W SensorCaptureService: PICO detectado: |a|=23.118708 m/s┬▓ ÔÇö iniciando captura post
+10-31 14:19:11.322 12460 12460 I VRI[MainActivity]@d32863b: handleAppVisibility mAppVisible = true visible = false
+10-31 14:19:11.322 12460 12460 D VRI[MainActivity]@d32863b: visibilityChanged oldVisibility=true newVisibility=false
+10-31 14:19:11.350 12460 12460 I VRI[MainActivity]@d32863b: Relayout returned: old=(0,0,432,432) new=(0,0,432,432) req=(432,432)8 dur=11 res=0x2 s={false 0x0} ch=true seqId=0
+10-31 14:19:11.352 12460 12460 I VRI[MainActivity]@d32863b: stopped(true) old = false
+10-31 14:19:11.416 12460 12460 I VRI[MainActivity]@d32863b: MSG_WINDOW_FOCUS_CHANGED 0 0
+10-31 14:19:12.053 12460 12460 W SensorCaptureService: Captura completada ÔÇö enviando ventana
+10-31 14:19:12.054 12460 12460 I SensorCaptureService: Trama lista: 1800 bytes
+10-31 14:19:12.071 12460 12563 I SensorCaptureService: Trama enviada a S26 Ultra de Alejandro
+10-31 14:19:17.566 12460 12460 W SensorCaptureService: PICO detectado: |a|=21.179993 m/s┬▓ ÔÇö iniciando captura post
+10-31 14:19:19.069 12460 12460 W SensorCaptureService: Captura completada ÔÇö enviando ventana
+10-31 14:19:19.070 12460 12460 I SensorCaptureService: Trama lista: 1800 bytes
+10-31 14:19:19.115 12460 12563 I SensorCaptureService: Trama enviada a S26 Ultra de Alejandro

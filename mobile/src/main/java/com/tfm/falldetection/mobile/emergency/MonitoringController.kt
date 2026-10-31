@@ -19,6 +19,10 @@ import kotlinx.coroutines.flow.StateFlow
  *     detenga la captura del acelerómetro y ahorre batería.
  *
  * Al reanudar ocurre lo inverso (orden RESUME).
+ *
+ * Cuando el usuario pausa o reanuda desde el reloj, el reloj envía su
+ * estado por "/monitoring_state" y se aplica con setFromWatch(), que no
+ * reenvía ninguna orden al reloj para no entrar en bucle.
  */
 object MonitoringController {
 
@@ -42,12 +46,7 @@ object MonitoringController {
     }
 
     fun setProtected(context: Context, protected: Boolean) {
-        _isProtected.value = protected
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_PROTECTED, protected)
-            .apply()
-
+        guardar(context, protected)
         Log.i(TAG, "setProtected=$protected")
 
         if (protected) {
@@ -55,5 +54,19 @@ object MonitoringController {
         } else {
             WearCommandSender.sendPause(context)
         }
+    }
+
+    /** Aplica el estado elegido desde el reloj, sin reenviárselo. */
+    fun setFromWatch(context: Context, protected: Boolean) {
+        guardar(context, protected)
+        Log.i(TAG, "setFromWatch=$protected")
+    }
+
+    private fun guardar(context: Context, protected: Boolean) {
+        _isProtected.value = protected
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_PROTECTED, protected)
+            .apply()
     }
 }

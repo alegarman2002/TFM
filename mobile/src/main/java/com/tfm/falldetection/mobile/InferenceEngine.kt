@@ -23,7 +23,6 @@ import kotlin.math.sqrt
  * Aquí hacemos el preprocesado:
  *   1) Convertir m/s² → g (dividir por 9.81)
  *   2) Calcular magnitud = sqrt(x² + y² + z²) en g
- *   3) Normalizar Z-score con los parámetros del entrenamiento
  *   4) Pasar el tensor [1, 150, 4] al modelo
  */
 class InferenceEngine private constructor(context: Context) {

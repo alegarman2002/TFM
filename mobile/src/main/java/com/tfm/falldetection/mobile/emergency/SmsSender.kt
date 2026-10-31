@@ -58,6 +58,13 @@ object SmsSender {
         return "$cabecera$ubicacion"
     }
 
+    /** Deja el texto en el alfabeto GSM de 7 bits: sin tildes ni rayas largas. */
+    private fun paraSms(texto: String): String =
+        java.text.Normalizer.normalize(texto, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+            .replace('—', '-')
+            .replace('–', '-')
+
     /**
      * Envía el SMS. Devuelve true si la llamada al sistema se realizó sin
      * excepción. No garantiza la entrega real al destinatario (depende
@@ -86,9 +93,15 @@ object SmsSender {
                     SmsManager.getDefault()
                 }
 
-            val parts = smsManager.divideMessage(body)
+            val texto = paraSms(body)
+            val parts = try {
+                smsManager.divideMessage(texto)
+            } catch (e: SecurityException) {
+                // En algunos Samsung, divideMessage falla con texto que no es del alfabeto GSM
+                ArrayList(texto.chunked(67))
+            }
             if (parts.size == 1) {
-                smsManager.sendTextMessage(phone, null, body, null, null)
+                smsManager.sendTextMessage(phone, null, texto, null, null)
             } else {
                 smsManager.sendMultipartTextMessage(phone, null, parts, null, null)
             }
