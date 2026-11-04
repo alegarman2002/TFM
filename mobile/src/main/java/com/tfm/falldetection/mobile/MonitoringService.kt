@@ -23,8 +23,8 @@ import com.tfm.falldetection.mobile.emergency.NotificationHelper
  * La notificación persistente asociada al servicio cumple además con la
  * política de Foreground Services exigida desde Android 8 (API 26).
  *
- * Se utiliza el tipo FOREGROUND_SERVICE_TYPE_DATA_SYNC, compatible con el
- * SDK 36 y adecuado para servicios de sincronización de datos sensoriales.
+ * Se utiliza el tipo FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE: el servicio
+ * atiende al reloj y este tipo no se detiene a las 6 h (Android 15+).
  */
 class MonitoringService : Service() {
 
@@ -60,7 +60,7 @@ class MonitoringService : Service() {
             startForeground(
                 NotificationHelper.NOTIF_MONITORING_ID,
                 notif,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             )
         } else {
             startForeground(NotificationHelper.NOTIF_MONITORING_ID, notif)

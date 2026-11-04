@@ -51,7 +51,7 @@ import kotlin.math.sqrt
  *     el cual no se disparan nuevas detecciones, evitando enviar varias
  *     veces la misma caída.
  *
- * El servicio es de tipo dataSync y muestra una notificación persistente
+ * El servicio es de tipo health y muestra una notificación persistente
  * mientras está activo. El usuario lo arranca y detiene desde el botón
  * ACTIVAR / DETENER de MainActivity.
  */
@@ -162,7 +162,7 @@ class SensorCaptureService : Service(), SensorEventListener {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
         } else {
             startForeground(NOTIF_ID, notif)
         }

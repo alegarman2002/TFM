@@ -84,7 +84,7 @@
         <service
             android:name=".MonitoringService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="connectedDevice" />
 
     </application>
 
